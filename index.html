@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Ahorcado 💛</title>
+  <style>
+    :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    body { margin: 0; padding: 24px; background: #0b1020; color: #e8ecff; }
+    .wrap { max-width: 960px; margin: 0 auto; display: grid; gap: 16px; }
+    .card { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 16px; padding: 16px; }
+    h1 { margin: 0 0 8px; font-size: 22px; }
+    .row { display: grid; grid-template-columns: 1.25fr 1fr; gap: 16px; }
+    @media (max-width: 860px){ .row{ grid-template-columns: 1fr; } }
+
+    .status { display:flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+    .pill { padding: 8px 12px; border-radius: 999px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); }
+    .msg { font-size: 18px; margin-top: 10px; }
+    .win { color: #8dffbf; font-weight: 700; }
+    .lose { color: #ff9a9a; font-weight: 700; }
+
+    .word { font-size: 28px; letter-spacing: 2px; line-height: 1.4; word-break: break-word; margin-top: 8px; }
+    .word .ch {
+      display: inline-block;
+      min-width: 18px;
+      text-align: center;
+      border-bottom: 2px solid rgba(232,236,255,0.35);
+      margin: 0 4px 6px 4px;
+      padding: 2px 0;
+    }
+    .word .space { border-bottom: none; min-width: 14px; margin: 0 10px; }
+
+    .kbd { display: grid; grid-template-columns: repeat(9, 1fr); gap: 8px; margin-top: 10px; }
+    @media (max-width: 520px){ .kbd{ grid-template-columns: repeat(7, 1fr); } }
+
+    button.key {
+      cursor: pointer;
+      padding: 10px 0;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: rgba(255,255,255,0.08);
+      color: #e8ecff;
+      font-weight: 650;
+      user-select: none;
+      transition: transform .04s ease, background .15s ease, opacity .15s ease;
+    }
+    button.key:active { transform: translateY(1px); }
+    button.key[disabled]{ opacity: .45; cursor: not-allowed; }
+    .bad { background: rgba(255,100,100,0.18); border-color: rgba(255,100,100,0.35); }
+    .good { background: rgba(120,255,180,0.14); border-color: rgba(120,255,180,0.35); }
+
+    .controls { display:flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+    .btn {
+      cursor: pointer;
+      padding: 10px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: rgba(255,255,255,0.10);
+      color: #e8ecff;
+      font-weight: 650;
+    }
+
+    canvas#hangman { width: 100%; height: auto; background: rgba(255,255,255,0.04); border-radius: 16px; border: 1px solid rgba(255,255,255,0.10); }
+    .small { opacity: .8; font-size: 13px; margin-top: 8px; }
+
+    /* Confetti */
+    canvas#confetti { position: fixed; inset: 0; pointer-events: none; z-index: 9999; }
+
+    /* Challenge */
+    .hidden { display: none; }
+    .q { margin: 12px 0 16px; padding: 12px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.05); }
+    .q h3 { margin: 0 0 10px; font-size: 16px; }
+    label { display: block; margin: 8px 0; cursor: pointer; }
+  </style>
+</head>
+
+<body>
+  <canvas id="confetti"></canvas>
+
+  <div class="wrap">
+    <div class="card">
+      <h1>Juego del Ahorcado 🎯</h1>
+      <div class="small">La frase solo se revela si ganas 💛</div>
+    </div>
+
+    <div class="row">
+      <div class="card">
+        <div class="status">
+          <div class="pill">Intentos restantes: <b id="tries">6</b></div>
+          <div class="pill">Fallos: <b id="misses">—</b></div>
+        </div>
+
+        <div id="word" class="word"></div>
+
+        <div class="controls">
+          <button class="btn" id="resetBtn">Reiniciar</button>
+        </div>
+
+        <div id="message" class="msg"></div>
+
+        <div class="kbd" id="kbd"></div>
+        <div class="small">Tip: también puedes usar el teclado físico.</div>
+      </div>
+
+      <div class="card">
+        <canvas id="hangman" width="520" height="420"></canvas>
+        <div class="small">Muñeco del ahorcado: 6 fallos = fin.</div>
+      </div>
+    </div>
+
+    <div id="challengeSection" class="card hidden">
+      <h2>🔥 Desafío final para ganar el premio 🔥</h2>
+      <div id="questions"></div>
+      <div class="controls">
+        <button class="btn" id="submitChallenge">Enviar respuestas</button>
+      </div>
+      <div id="challengeResult" class="msg"></div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const SECRET_PHRASE = "Cami Te quiero mucho. Feliz dia del amor.";
+  const SECRET = SECRET_PHRASE.toUpperCase();
+  const MAX_WRONG = 6;
+  const LETTERS = "ABCDEFGHIJKLMNÑOPQRSTUVWXYZ".split("");
+
+  const elWord = document.getElementById("word");
+  const elTries = document.getElementById("tries");
+  const elMisses = document.getElementById("misses");
+  const elMsg = document.getElementById("message");
+  const elKbd = document.getElementById("kbd");
+  const resetBtn = document.getElementById("resetBtn");
+
+  const challengeSection = document.getElementById("challengeSection");
+  const questionsEl = document.getElementById("questions");
+  const submitChallengeBtn = document.getElementById("submitChallenge");
+  const challengeResultEl = document.getElementById("challengeResult");
+
+  let displayChars = [];
+  let guessed = new Set();
+  let wrong = 0;
+  let gameOver = false;
+  let revealedChallengeBtn = null;
+
+  const norm = (s) => s.toUpperCase();
+
+  // ===== Hangman canvas =====
+  const hangCanvas = document.getElementById("hangman");
+  const hctx = hangCanvas.getContext("2d");
+
+  function clearHang(){ hctx.clearRect(0,0,hangCanvas.width, hangCanvas.height); }
+
+  function line(x1,y1,x2,y2,w=6){
+    hctx.lineWidth=w; hctx.lineCap="round";
+    hctx.beginPath(); hctx.moveTo(x1,y1); hctx.lineTo(x2,y2); hctx.stroke();
+  }
+  function circle(x,y,r,w=6){
+    hctx.lineWidth=w;
+    hctx.beginPath(); hctx.arc(x,y,r,0,Math.PI*2); hctx.stroke();
+  }
+  function drawHangman(){
+    clearHang();
+    hctx.strokeStyle="rgba(232,236,255,0.85)";
+    // estructura
+    line(80,360,300,360);
+    line(130,360,130,70);
+    line(130,70,320,70);
+    line(320,70,320,115);
+    // partes
+    if(wrong>=1) circle(320,150,35);
+    if(wrong>=2) line(320,185,320,280);
+    if(wrong>=3) line(320,210,270,245);
+    if(wrong>=4) line(320,210,370,245);
+    if(wrong>=5) line(320,280,285,335);
+    if(wrong>=6) line(320,280,355,335);
+  }
+
+  // ===== Confetti (stoppable) =====
+  const confCanvas = document.getElementById("confetti");
+  const cctx = confCanvas.getContext("2d");
+  let confettiParts = [];
+  let confettiRAF = null;
+  let confettiUntil = 0;
+
+  function resizeConfetti(){
+    confCanvas.width = window.innerWidth * devicePixelRatio;
+    confCanvas.height = window.innerHeight * devicePixelRatio;
+  }
+  window.addEventListener("resize", resizeConfetti);
+  resizeConfetti();
+
+  function rand(min,max){ return Math.random()*(max-min)+min; }
+
+  function makeConfetti(n=170){
+    const W=confCanvas.width, H=confCanvas.height;
+    confettiParts = Array.from({length:n}).map(() => ({
+      x: rand(0,W),
+      y: rand(-H,0),
+      vx: rand(-1.6,1.6) * devicePixelRatio,
+      vy: rand(2.0,5.2) * devicePixelRatio,
+      size: rand(6,12) * devicePixelRatio,
+      rot: rand(0,Math.PI*2),
+      vr: rand(-0.18,0.18),
+      col: `hsl(${Math.floor(rand(0,360))} 90% 65%)`,
+      shape: Math.random()<0.5 ? "rect" : "circle"
+    }));
+  }
+
+  function stopConfetti(){
+    if(confettiRAF) cancelAnimationFrame(confettiRAF);
+    confettiRAF = null;
+    confettiUntil = 0;
+    cctx.clearRect(0,0,confCanvas.width, confCanvas.height);
+  }
+
+  function drawConfetti(){
+    const now = performance.now();
+    if(confettiUntil && now > confettiUntil){ stopConfetti(); return; }
+
+    cctx.clearRect(0,0,confCanvas.width, confCanvas.height);
+    for(const p of confettiParts){
+      p.x += p.vx; p.y += p.vy; p.rot += p.vr;
+
+      if(p.y > confCanvas.height + 60*devicePixelRatio){
+        p.y = rand(-200*devicePixelRatio, -20*devicePixelRatio);
+        p.x = rand(0, confCanvas.width);
+      }
+      if(p.x < -60*devicePixelRatio) p.x = confCanvas.width + 60*devicePixelRatio;
+      if(p.x > confCanvas.width + 60*devicePixelRatio) p.x = -60*devicePixelRatio;
+
+      cctx.save();
+      cctx.translate(p.x, p.y);
+      cctx.rotate(p.rot);
+      cctx.fillStyle = p.col;
+      if(p.shape==="rect"){
+        cctx.fillRect(-p.size/2, -p.size/2, p.size, p.size*0.55);
+      }else{
+        cctx.beginPath();
+        cctx.arc(0,0,p.size*0.35,0,Math.PI*2);
+        cctx.fill();
+      }
+      cctx.restore();
+    }
+    confettiRAF = requestAnimationFrame(drawConfetti);
+  }
+
+  function startConfetti(ms=2000){
+    resizeConfetti();
+    makeConfetti();
+    confettiUntil = performance.now() + ms;
+    if(confettiRAF) cancelAnimationFrame(confettiRAF);
+    confettiRAF = requestAnimationFrame(drawConfetti);
+  }
+
+  // ===== Aplausos (fallback sintetizado) =====
+  let audioCtx = null;
+  function playApplause(){
+    try{
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      const t0 = audioCtx.currentTime;
+
+      const master = audioCtx.createGain();
+      master.gain.setValueAtTime(0.0001, t0);
+      master.gain.linearRampToValueAtTime(0.7, t0 + 0.05);
+      master.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.3);
+      master.connect(audioCtx.destination);
+
+      const bufferSize = Math.floor(audioCtx.sampleRate * 1.5);
+      const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for(let i=0;i<bufferSize;i++) data[i] = (Math.random()*2 - 1);
+
+      const noise = audioCtx.createBufferSource();
+      noise.buffer = buffer;
+
+      const bp = audioCtx.createBiquadFilter();
+      bp.type="bandpass"; bp.frequency.value=1400; bp.Q.value=0.9;
+
+      const hp = audioCtx.createBiquadFilter();
+      hp.type="highpass"; hp.frequency.value=700;
+
+      const gate = audioCtx.createGain();
+      gate.gain.value = 0;
+
+      noise.connect(bp); bp.connect(hp); hp.connect(gate); gate.connect(master);
+
+      for(let i=0;i<14;i++){
+        const tt = t0 + 0.06 + i*0.07 + (Math.random()*0.03);
+        gate.gain.setValueAtTime(0.0, tt);
+        gate.gain.linearRampToValueAtTime(1.0, tt + 0.008);
+        gate.gain.exponentialRampToValueAtTime(0.001, tt + 0.06);
+      }
+
+      noise.start(t0);
+      noise.stop(t0 + 1.5);
+    }catch(_){}
+  }
+
+  // ===== Game logic =====
+  function setup(){
+    guessed = new Set();
+    wrong = 0;
+    gameOver = false;
+
+    // reset challenge UI
+    challengeSection.classList.add("hidden");
+    questionsEl.innerHTML = "";
+    challengeResultEl.textContent = "";
+    if(revealedChallengeBtn){
+      revealedChallengeBtn.remove();
+      revealedChallengeBtn = null;
+    }
+
+    stopConfetti();
+
+    displayChars = Array.from(SECRET).map(ch => {
+      if(ch === " ") return " ";
+      if(!/[A-ZÑÁÉÍÓÚÜ]/.test(ch)) return ch;
+      return "_";
+    });
+
+    elMsg.textContent = "";
+    elMsg.className = "msg";
+
+    buildKeyboard();
+    render();
+    drawHangman();
+  }
+
+  function buildKeyboard(){
+    elKbd.innerHTML = "";
+    LETTERS.forEach(letter => {
+      const btn = document.createElement("button");
+      btn.className = "key";
+      btn.textContent = letter;
+      btn.addEventListener("click", () => guessLetter(letter, btn));
+      elKbd.appendChild(btn);
+    });
+  }
+
+  function render(){
+    elTries.textContent = String(MAX_WRONG - wrong);
+    const misses = [...guessed].filter(l => !SECRET.includes(l));
+    elMisses.textContent = misses.length ? misses.join(" ") : "—";
+
+    elWord.innerHTML = "";
+    Array.from(SECRET).forEach((ch, idx) => {
+      const span = document.createElement("span");
+      span.className = "ch";
+      if(ch === " "){
+        span.classList.add("space");
+        span.textContent = " ";
+      } else if(!/[A-ZÑÁÉÍÓÚÜ]/.test(ch)){
+        span.style.borderBottom = "none";
+        span.textContent = ch;
+      } else {
+        span.textContent = displayChars[idx];
+      }
+      elWord.appendChild(span);
+    });
+  }
+
+  function setKeysEnabled(enabled){
+    document.querySelectorAll("button.key").forEach(b => b.disabled = !enabled);
+  }
+
+  function endGame(win){
+    gameOver = true;
+    setKeysEnabled(false);
+
+    if(win){
+      // SOLO si gana, revelar frase
+      displayChars = Array.from(SECRET).map(ch => ch);
+      render();
+
+      elMsg.innerHTML = "<span class='win'>¡Acertaste!. Cami Te quiero mucho. Feliz día del amor. Que tengas un bonito día 😊 </span>";
+      playApplause();
+      startConfetti(8000); // dura y luego se apaga solo si no lo detienen antes
+
+      // Botón para ir al desafío final (y ahí se corta el confeti)
+      revealedChallengeBtn = document.createElement("button");
+      revealedChallengeBtn.className = "btn";
+      revealedChallengeBtn.textContent = "Revelar desafío final para ganar el premio 🎁";
+      revealedChallengeBtn.addEventListener("click", () => {
+        stopConfetti();               // ✅ tu pedido: al apretar este botón, corta confeti
+        showChallenge();
+        revealedChallengeBtn.scrollIntoView({behavior:"smooth", block:"center"});
+      });
+
+      elMsg.appendChild(document.createElement("br"));
+      elMsg.appendChild(revealedChallengeBtn);
+    } else {
+      // Si pierde: NO revelar
+      elMsg.innerHTML = "<span class='lose'>Se acabaron los intentos 😅 (la frase queda oculta)</span>";
+    }
+  }
+
+  function guessLetter(letter, btnEl=null){
+    if(gameOver) return;
+
+    const L = norm(letter);
+    if(guessed.has(L)) return;
+    guessed.add(L);
+
+    const hit = SECRET.includes(L);
+
+    // marcar botón
+    const mark = (btn) => {
+      btn.disabled = true;
+      btn.classList.add(hit ? "good" : "bad");
+    };
+    if(btnEl) mark(btnEl);
+    else {
+      const btn = [...document.querySelectorAll("button.key")].find(b => b.textContent === L);
+      if(btn) mark(btn);
+    }
+
+    if(hit){
+      Array.from(SECRET).forEach((ch, idx) => {
+        if(ch === L) displayChars[idx] = ch;
+      });
+    } else {
+      wrong += 1;
+      drawHangman();
+    }
+
+    render();
+
+    const stillHidden = displayChars.some((ch, idx) => /[A-ZÑÁÉÍÓÚÜ]/.test(SECRET[idx]) && ch === "_");
+    if(!stillHidden) endGame(true);
+    else if(wrong >= MAX_WRONG) endGame(false);
+  }
+
+  window.addEventListener("keydown", (e) => {
+    const key = norm(e.key);
+    if(/^[A-ZÑ]$/.test(key)) guessLetter(key);
+  });
+
+  resetBtn.addEventListener("click", setup);
+
+  // ===== Challenge =====
+  function showChallenge(){
+    challengeSection.classList.remove("hidden");
+    buildQuestions();
+  }
+
+  function buildQuestions(){
+    questionsEl.innerHTML = `
+      <div class="q">
+        <h3>1) El día de nuestro primer beso que te olvidaste en el auto</h3>
+        <label><input type="radio" name="q1" value="a"> a. Blusa</label>
+        <label><input type="radio" name="q1" value="b"> b. Arito</label>
+        <label><input type="radio" name="q1" value="c"> c. Cadena</label>
+        <label><input type="radio" name="q1" value="d"> d. Celular</label>
+      </div>
+
+      <div class="q">
+        <h3>2) ¿Qué tomaste esa noche?</h3>
+        <label><input type="radio" name="q2" value="a"> a. Fernet</label>
+        <label><input type="radio" name="q2" value="b"> b. Aperol</label>
+        <label><input type="radio" name="q2" value="c"> c. Cerveza</label>
+        <label><input type="radio" name="q2" value="d"> d. Agüita</label>
+      </div>
+
+      <div class="q">
+        <h3>3) ¿Qué me gusta mucho de ti y te lo digo siempre?</h3>
+        <label><input type="radio" name="q3" value="a"> a. Ojos verdes</label>
+        <label><input type="radio" name="q3" value="b"> b. Lunar en el pecho</label>
+        <label><input type="radio" name="q3" value="c"> c. Pompis</label>
+        <label><input type="radio" name="q3" value="d"> d. Todas las anteriores</label>
+      </div>
+    `;
+  }
+
+  submitChallengeBtn.addEventListener("click", () => {
+    const q1 = document.querySelector("input[name='q1']:checked")?.value;
+    const q2 = document.querySelector("input[name='q2']:checked")?.value;
+    const q3 = document.querySelector("input[name='q3']:checked")?.value;
+
+    if(!q1 || !q2 || !q3){
+      challengeResultEl.className = "msg lose";
+      challengeResultEl.textContent = "Elegí una opción en cada pregunta 😉";
+      return;
+    }
+
+    const ok = (q1 === "d" && q2 === "b" && q3 === "d");
+
+    if(ok){
+      challengeResultEl.className = "msg win";
+      challengeResultEl.innerHTML = `
+        ¡Desafío superado! 🎉💛<br><br>
+        <button class="btn" id="ytBtn">Ir al premio ▶️</button>
+      `;
+      startConfetti(4000);
+
+      document.getElementById("ytBtn").addEventListener("click", () => {
+        // (no pediste esto, pero es bueno) detener confeti al irse
+        stopConfetti();
+        window.location.href = "https://youtu.be/iPrxzdVdIZw?si=eppwsI6LKRbQEaWu";
+      });
+    } else {
+      challengeResultEl.className = "msg lose";
+      challengeResultEl.textContent = "Alguna respuesta está mal 😏 probá otra vez";
+    }
+  });
+
+  // Start
+  setup();
+})();
+</script>
+</body>
+</html>
